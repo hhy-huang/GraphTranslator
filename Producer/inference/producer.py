@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import torch
 from torch import nn
-from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM, LlamaForCausalLM
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.log_utils import setup_logging
@@ -30,7 +30,7 @@ args = parse_args()
 
 if torch.cuda.is_available():
     torch.backends.cudnn.benchmark = True
-    device = torch.device('cuda:0')
+    device = torch.device('cuda:6')
 else:
     device = torch.device('cpu')
 
@@ -67,6 +67,23 @@ def read_arxiv_dataset():
 
     return sorted_paperId2titleAndabs, sample_neighbor_df
 
+def chat(model, tokenizer, query, history=[], max_new_tokens=1024, temperature=1.0):
+    if history == []:
+        prompt = f"[INST]{query}[/INST]"
+    else:
+        prompt = history+"\n\n"+f"[INST]{query}[/INST]"
+    input = tokenizer(prompt, truncation=False, return_tensors="pt").to(device)
+    del input['token_type_ids']
+    context_length = input.input_ids.shape[-1]
+    output = model.generate(
+        **input,
+        max_new_tokens=max_new_tokens,
+        num_beams=1,
+        do_sample=False,
+        temperature=temperature,
+    )[0]
+    pred = tokenizer.decode(output[context_length:], skip_special_tokens=True)
+    return pred.strip(), prompt + pred.strip()
 
 class LLM(nn.Module):
     def __init__(self, args, **kwargs):
@@ -75,7 +92,7 @@ class LLM(nn.Module):
         # tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self._args.llm_checkpoint, trust_remote_code=True)
         # model
-        self.llm = AutoModel.from_pretrained(self._args.llm_checkpoint, trust_remote_code=True).half().to(device)
+        self.llm = LlamaForCausalLM.from_pretrained(self._args.llm_checkpoint, trust_remote_code=True).half().to(device)
 
     def inference_chatglm_arxiv(self, arxiv_data, sample_neighbor_df):
         self.llm.eval()
@@ -109,12 +126,21 @@ class LLM(nn.Module):
             neighbor_word_input += dst_prompt
 
             try:
-                response_node, _ = self.llm.chat(self.tokenizer,
-                                                        node_word_input ,
-                                                        history=[])
-                response_neighbor, _ = self.llm.chat(self.tokenizer,
-                                                            neighbor_word_input,
-                                                            history=[])
+                # response_node, _ = self.llm.chat(self.tokenizer,
+                #                                         node_word_input ,
+                #                                         history=[])
+                response_node, _ = chat(self.llm, \
+                    tokenizer=self.tokenizer, 
+                    query=node_word_input,
+                    history=[])
+                # response_neighbor, _ = self.llm.chat(self.tokenizer,
+                #                                             neighbor_word_input,
+                #                                             history=[])
+                response_neighbor, _ = chat(self.llm, \
+                    tokenizer=self.tokenizer, 
+                    query=neighbor_word_input,
+                    history=[])
+
                 summary.append({
                     'node_id': node_id,
                     'title': title,
