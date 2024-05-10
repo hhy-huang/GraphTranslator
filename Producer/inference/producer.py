@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 import torch
 from torch import nn
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, AutoModel, AutoModelForCausalLM
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.log_utils import setup_logging
@@ -17,7 +17,7 @@ from utils.env import init_seeds
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--llm_checkpoint', type=str, default="../../Translator/models/chatglm2-6b", required=False)
+    parser.add_argument('--llm_checkpoint', type=str, default="/data/ChenWei/HaoyuHuang/llama-2-7b-hf", required=False)
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
     parser.add_argument("--distributed", action='store_const', default=False, const=True)
     parser.add_argument('--random_seed', type=int, default=42, help="random seed for initialization")
