@@ -6,7 +6,7 @@ import numpy as np
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
 import torch
 import torch.backends.cudnn as cudnn
-
+sys.path.append('/data/ChenWei/HaoyuHuang/GraphTranslator/Translator')
 import tasks
 from common.config import Config
 from common.dist_utils import get_rank, init_distributed_mode
@@ -18,7 +18,7 @@ from common.optims import (
 from common.registry import registry
 from common.utils import now
 
-from datasets.builders import *
+from Translator.datasets.builders import *
 from models import *
 from runners import *
 from tasks import *

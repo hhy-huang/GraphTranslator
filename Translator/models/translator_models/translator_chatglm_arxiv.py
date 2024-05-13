@@ -8,12 +8,20 @@ import logging
 from typing import List, Optional
 import torch
 import torch.nn as nn
+import torch.distributed as dist
+
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.nn.parallel import DataParallel
 from torch.nn.utils.rnn import pad_sequence
 from common.registry import registry
 from models.translator_models.translator import TranslatorBase
 from transformers import BertTokenizer
 from models.translator_models.Qformer import BertConfig, BertLMHeadModel
 from models.chatglm2 import ChatGLMForConditionalGeneration, ChatGLMTokenizer
+from transformers import AutoConfig, AutoModelForCausalLM, \
+                         LlamaConfig, LlamaModel, LlamaForCausalLM, \
+                         CLIPVisionModel, CLIPImageProcessor, AutoTokenizer
+
 
 IMAGE_TOKEN_ID = 101
 
@@ -49,9 +57,11 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
         self.Qformer.resize_token_embeddings(len(self.tokenizer))
         self.Qformer.cls = None
 
-        self.chatglm2_tokenizer = ChatGLMTokenizer.from_pretrained(chatglm2_model, use_fast=False, trust_remote_code=True)
+        # self.chatglm2_tokenizer = ChatGLMTokenizer.from_pretrained(chatglm2_model, use_fast=False, trust_remote_code=True)
+        self.chatglm2_tokenizer = AutoTokenizer.from_pretrained(chatglm2_model, use_fast=False, trust_remote_code=True)
 
-        self.chatglm2_model = ChatGLMForConditionalGeneration.from_pretrained(chatglm2_model)
+        # self.chatglm2_model = ChatGLMForConditionalGeneration.from_pretrained(chatglm2_model)
+        self.chatglm2_model = AutoModelForCausalLM.from_pretrained(chatglm2_model)
 
         for _, param in self.chatglm2_model.named_parameters():
             param.requires_grad = False
@@ -123,7 +133,8 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
         # pad sequences
         input_ids = pad_sequence(sequences, batch_first=True, padding_value=tokenizer.pad_token_id).to(device)
         labels = pad_sequence(labels, batch_first=True, padding_value=-100).to(device)
-        inputs_embeds = self.chatglm2_model.transformer.embedding.word_embeddings(input_ids)
+        # inputs_embeds = self.chatglm2_model.transformer.embedding.word_embeddings(input_ids)
+        inputs_embeds = self.chatglm2_model.model.embed_tokens(input_ids)
         inputs_embeds[:, nvtoken_id: nvtoken_id + nvtoken] = vtokens
         inputs_embeds = inputs_embeds.transpose(0, 1).contiguous()
         return input_ids, labels, inputs_embeds
@@ -162,7 +173,7 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
         )
 
         outputs = self.chatglm2_model(
-            input_ids=input_ids,
+            input_ids=None,
             inputs_embeds=inputs_embeds,
             return_dict=True,
             labels=labels,

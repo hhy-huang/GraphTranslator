@@ -14,7 +14,7 @@ import torch.distributed as dist
 from common.dist_utils import get_rank, get_world_size, is_main_process, is_dist_avail_and_initialized
 from common.logger import MetricLogger, SmoothedValue
 from common.registry import registry
-from datasets.data_utils import prepare_sample
+from Translator.datasets.data_utils import prepare_sample
 
 
 class BaseTask:

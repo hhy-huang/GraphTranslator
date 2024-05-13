@@ -21,7 +21,7 @@ from common.dist_utils import (
 )
 from common.registry import registry
 from common.utils import is_url
-from datasets.datasets.dataloader_utils import MultiIterLoader
+from Translator.datasets.datasets.dataloader_utils import MultiIterLoader
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import ChainDataset

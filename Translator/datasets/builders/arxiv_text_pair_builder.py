@@ -7,9 +7,9 @@
 import logging
 from common.registry import registry
 import torch.distributed as dist
-from datasets.builders.base_dataset_builder import BaseDatasetBuilder
+from Translator.datasets.builders.base_dataset_builder import BaseDatasetBuilder
 from common.dist_utils import is_dist_avail_and_initialized
-from datasets.datasets.arxiv_text_pair_datasets import ArxivTextPairDataset
+from Translator.datasets.datasets.arxiv_text_pair_datasets import ArxivTextPairDataset
 
 
 @registry.register_builder("arxiv_caption")

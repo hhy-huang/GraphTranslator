@@ -6,10 +6,10 @@
 """
 import os
 import sys
-
+sys.path.append('/data/ChenWei/HaoyuHuang/GraphTranslator')
 from common.registry import registry
 
-from datasets.builders import *
+from Translator.datasets.builders import *
 from models import *
 from tasks import *
 

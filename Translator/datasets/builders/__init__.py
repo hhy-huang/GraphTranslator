@@ -5,8 +5,8 @@
  For full license text, see the LICENSE file in the repo root or https://opensource.org/licenses/BSD-3-Clause
 """
 
-from datasets.builders.base_dataset_builder import load_dataset_config
-from datasets.builders.arxiv_text_pair_builder import (
+from Translator.datasets.builders.base_dataset_builder import load_dataset_config
+from Translator.datasets.builders.arxiv_text_pair_builder import (
     ArxivCaptionBuilder,
 )
 

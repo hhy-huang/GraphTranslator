@@ -14,7 +14,7 @@ import webdataset as wds
 import torch
 from torch.utils.data.dataset import IterableDataset, ChainDataset
 from common.registry import registry
-from datasets.datasets.base_dataset import ConcatDataset
+from Translator.datasets.datasets.base_dataset import ConcatDataset
 from tqdm import tqdm
 
 MAX_INT = registry.get("MAX_INT")
