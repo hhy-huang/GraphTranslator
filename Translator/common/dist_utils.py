@@ -69,7 +69,6 @@ def init_distributed_mode(args):
         torch.distributed.barrier()
         args.world_size = dist.get_world_size()
         args.rank = dist.get_rank()
-        args.gpu = args.rank % torch.cuda.device_count()
         torch.cuda.set_device(args.gpu)
         print(
             "| distributed init (rank {}, world {}): {}".format(

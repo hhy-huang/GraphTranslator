@@ -14,6 +14,8 @@ from pathlib import Path
 
 import torch
 import webdataset as wds
+import torch.distributed as dist
+
 from common.dist_utils import (
     download_cached_file,
     is_main_process,
@@ -39,7 +41,8 @@ class RunnerBase:
     def __init__(self, cfg, task, model, datasets, job_id):
         self.config = cfg
         self.job_id = job_id
-
+        self.config.run_cfg.distributed = False
+        self.config.run_cfg.gpu = None
         self.task = task
         self.datasets = datasets
 
@@ -80,7 +83,7 @@ class RunnerBase:
             if self.use_distributed:
                 if self._wrapped_model is None:
                     self._wrapped_model = DDP(
-                        self._model, device_ids=[self.config.run_cfg.gpu], find_unused_parameters=True
+                        self._model, device_ids=self.config.run_cfg.gpu, find_unused_parameters=True
                     )
             else:
                 self._wrapped_model = self._model

@@ -8,6 +8,7 @@ import logging
 
 import torch
 import torch.nn as nn
+import numpy as np
 from torch.nn import functional as F
 
 from common.registry import registry
@@ -39,9 +40,10 @@ class TranslatorQformerArxiv(TranslatorBase):
     ):
         super().__init__()
 
-        self.tokenizer = self.init_tokenizer()
+        self.GNN_embeddings = torch.load("/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/GraphTranslator-arxiv/graphsage_node_embeddings.pt").to('cpu').detach().numpy()
+        self.tokenizer = self.init_tokenizer()                      # tokenizer from BERT, add [DEC] special token
 
-        self.Qformer, self.query_tokens = self.init_Qformer(
+        self.Qformer, self.query_tokens = self.init_Qformer(        # init Qformer
             num_query_token, num_features, cross_attention_freq
         )
         self.Qformer.resize_token_embeddings(len(self.tokenizer))
@@ -51,15 +53,15 @@ class TranslatorQformerArxiv(TranslatorBase):
                 key_orig = name.replace("_query", "")
                 param.data.copy_(state_dict[key_orig])
 
-        self.behavior_proj = nn.Linear(self.Qformer.config.hidden_size, embed_dim)
-        self.text_proj = nn.Linear(self.Qformer.config.hidden_size, embed_dim)
+        self.behavior_proj = nn.Linear(self.Qformer.config.hidden_size, embed_dim)  # [768, 256]
+        self.text_proj = nn.Linear(self.Qformer.config.hidden_size, embed_dim)      # [768, 256]
 
-        self.itm_head = nn.Linear(self.Qformer.config.hidden_size, 2)
+        self.itm_head = nn.Linear(self.Qformer.config.hidden_size, 2)               # [768, 2]
 
         self.temp = nn.Parameter(0.07 * torch.ones([]))
 
-        self.max_txt_len = max_txt_len
-        self.proj = nn.Sequential(
+        self.max_txt_len = max_txt_len                                              # 512
+        self.proj = nn.Sequential(                                                  # Projector, [256, 256]
             nn.Linear(embed_dim, embed_dim),
             nn.GELU(),
             nn.Linear(embed_dim, embed_dim)
@@ -72,109 +74,124 @@ class TranslatorQformerArxiv(TranslatorBase):
 
     def init_Qformer(cls, num_query_token, vision_width, cross_attention_freq=2):
         encoder_config = BertConfig.from_pretrained("../models/bert-base-uncased")
-        encoder_config.encoder_width = vision_width
+        encoder_config.encoder_width = vision_width                         # new attributes
         # insert cross-attention layer every other block
         encoder_config.add_cross_attention = True
         encoder_config.cross_attention_freq = cross_attention_freq
-        encoder_config.query_length = num_query_token
-        Qformer = BertLMHeadModel(encoder_config)
+        encoder_config.query_length = num_query_token                       # 32
+        Qformer = BertLMHeadModel(encoder_config)                           # decoder-only
         checkpoint = torch.load("../models/bert-base-uncased/model.pth", map_location=lambda storage, loc: storage)
 
         Qformer.load_state_dict(checkpoint['model_state_dict'], strict=True)
-        query_tokens = nn.Parameter(
-            torch.zeros(1, num_query_token, encoder_config.hidden_size)
+        query_tokens = nn.Parameter(                                        # query tokens initialize
+            torch.zeros(1, num_query_token, encoder_config.hidden_size)     # [1, length, 768]
         )
-        query_tokens.data.normal_(mean=0.0, std=encoder_config.initializer_range)
+        query_tokens.data.normal_(mean=0.0, std=encoder_config.initializer_range)   # normal distribution
         return Qformer, query_tokens
 
-    def forward(self, samples):
-        behavior_embeds = torch.unsqueeze(samples[1], dim=1)
-        text = samples[2]
-        behavior_embeds = behavior_embeds.to(self.device)
+    def forward(self, samples):                                 # num of samples ==  batch_size, every batch is a node
+        behavior_embeds = torch.unsqueeze(samples[1], dim=1)    # samples[1]: [batch_size, 768], node features
+        behavior_neighbors = samples[4]                         # [batch_size, 10]
+        behavior_neighbors_length = samples[5].detach().tolist()            # [batch_size]
+        behavior_neighbors_embeds = torch.tensor(self.GNN_embeddings[behavior_neighbors]).to(self.device) # [batch_size, 10, 768]
+        text = samples[2]                                       # list with batch_size summaries
+
+        behavior_embeds = behavior_embeds.to(self.device)       # [batch_size, 1, 768]
+        behavior_neighbors_embeds = behavior_neighbors_embeds.to(self.device)   # [batch_size, 10, 768]
         behavior_atts = torch.ones(behavior_embeds.size()[:-1], dtype=torch.long).to(behavior_embeds.device)
+                                                                # [batch_size, 1]
+        behavior_neighbors_atts = [[1] * x + [0] * (behavior_neighbors.shape[-1] - x) \
+            for x in behavior_neighbors_length]
+        behavior_neighbors_atts = torch.tensor(np.array(behavior_neighbors_atts), dtype=torch.long).to(behavior_neighbors_embeds.device)
 
-        query_tokens = self.query_tokens.expand(behavior_embeds.shape[0], -1, -1)
-
+        query_tokens = self.query_tokens.expand(behavior_embeds.shape[0], -1, -1)   # repeated in each batch
+                                                                # [batch_size, 32, 768]
         query_output = self.Qformer.bert(
-            query_embeds=query_tokens,
-            encoder_hidden_states=behavior_embeds,
-            encoder_attention_mask=behavior_atts,
+            query_embeds=query_tokens,                          # [batch_size, 32, 768]
+            # encoder_hidden_states=behavior_embeds,              # [batch_size, 1, 768], 执行cross-attention而不是self-attention
+            encoder_hidden_states=behavior_neighbors_embeds,    # [batch_size, 10, 768], 执行cross-attention而不是self-attention
+            # encoder_attention_mask=behavior_atts,               # [batch_size, 1]
+            encoder_attention_mask=behavior_neighbors_atts,     # [batch_size, 10]
             use_cache=True,
             return_dict=True,
-        )
-
-        behavior_feats = F.normalize(
+        )       # last_hidden_state: [batch_size, 32, 768]
+        # layer norm?
+        behavior_feats = F.normalize(                           # [batch_size, 32, 256]
             self.behavior_proj(query_output.last_hidden_state), dim=-1
-        )
-
-        text_tokens = self.tokenizer(
+        )                                                       # (Image features)
+        # tokenize summaries
+        text_tokens = self.tokenizer(           # [batch_size, max_length]
             text,
             padding="max_length",
             truncation=True,
-            max_length=self.max_txt_len,
+            max_length=self.max_txt_len,        # 512 too short?
             return_tensors="pt",
         ).to(behavior_embeds.device)
-
-        text_output = self.Qformer.bert(
+        # encoding generated text summaries
+        text_output = self.Qformer.bert(        # [batch_size, 512, 768]
             text_tokens.input_ids,
             attention_mask=text_tokens.attention_mask,
             return_dict=True,
         )
-        text_feat = F.normalize(
+        text_feat = F.normalize(                # [batch_size, 256]
             self.text_proj(text_output.last_hidden_state[:, 0, :]), dim=-1
-        )
+        )                                       # fetch [CLS] feature for each summaries
 
-        ###============== Image-text Contrastive ===================###
-        behavior_feats_all = concat_all_gather(
+        ###============== Image-text Contrastive ===================### (Image --> Query)
+        behavior_feats_all = concat_all_gather(                 # if distributed
             behavior_feats
         )  # [batch_size*num_gpu, num_query_tokens, embed_dim] # torch.Size([8, 32, 256])
         text_feat_all = concat_all_gather(text_feat)  # [batch_size*num_gpu, embed_dim]
 
-        sim_q2t = torch.matmul(
+        sim_q2t = torch.matmul(                       # [batch_size, 1, 32, 256] * [batch_size, 256, 1]
             behavior_feats.unsqueeze(1), text_feat_all.unsqueeze(-1)
-        ).squeeze()
+        ).squeeze()                                   # [batch_size, batch_size, 32]
         # [batch_size, batch_size*num_gpu, num_query_tokens]
 
         # image-text similarity: aggregate across all query tokens
-        sim_i2t, _ = sim_q2t.max(-1)
-        sim_i2t = sim_i2t / self.temp
+        sim_i2t, _ = sim_q2t.max(-1)                # select from text dim
+        sim_i2t = sim_i2t / self.temp               # [batch_size, batch_size]
 
         # text-query similarity: [batch_size, batch_size*num_gpu, num_query_tokens]
-        sim_t2q = torch.matmul(
+        sim_t2q = torch.matmul(                     # [batch_size, 1, 1, 256] * [batch_size, 256, 32]
             text_feat.unsqueeze(1).unsqueeze(1), behavior_feats_all.permute(0, 2, 1)
-        ).squeeze()
+        ).squeeze()                                 # [batch_size, batch_size, 32]
 
         # text-image similarity: aggregate across all query tokens
-        sim_t2i, _ = sim_t2q.max(-1)
+        sim_t2i, _ = sim_t2q.max(-1)   # select from image dim
         sim_t2i = sim_t2i / self.temp  # [batch_size, batch_size*num_gpu]
 
         rank = 0
         bs = behavior_embeds.size(0)
         targets = torch.linspace(rank * bs, rank * bs + bs - 1, bs, dtype=int).to(
             behavior_embeds.device
-        )
+        )                               # [batch_size], [0, 1, 2,.., batch_size - 1]
 
-        loss_itc = (
+        loss_itc = (                   # contrast loss between summaries&query tokens
             F.cross_entropy(sim_i2t, targets, label_smoothing=0.1)
             + F.cross_entropy(sim_t2i, targets, label_smoothing=0.1)
         ) / 2
 
-        ###============== Image-text Matching ===================###
-        text_input_ids_world = concat_all_gather(text_tokens.input_ids)
+        ###============== Image-text Matching (classification task) ===================###
+        text_input_ids_world = concat_all_gather(text_tokens.input_ids)             # [batch_size, max_length]
         text_attention_mask_world = concat_all_gather(text_tokens.attention_mask)
-        behavior_embeds_world = all_gather_with_grad(behavior_embeds)
+        behavior_embeds_world = all_gather_with_grad(behavior_embeds)               # graph feature [batch_size, 1, 768]
+        behavior_neighbors_embeds_world = all_gather_with_grad(behavior_neighbors_embeds)   # [batch_size, 10, 768]
         with torch.no_grad():
             weights_t2i = F.softmax(sim_t2i, dim=1) + 1e-4
-            weights_t2i[:, rank * bs : rank * bs + bs].fill_diagonal_(0)
+            weights_t2i[:, rank * bs : rank * bs + bs].fill_diagonal_(0)            # only for ddp
             weights_i2t = F.softmax(sim_i2t, dim=1) + 1e-4
             weights_i2t[:, rank * bs : rank * bs + bs].fill_diagonal_(0)
 
         # select a negative image for each text
         behavior_embeds_neg = []
+        behavior_neighbors_embeds_neg = []
         for b in range(bs):
-            neg_idx = torch.multinomial(weights_t2i[b], 1).item()
+            neg_idx = torch.multinomial(weights_t2i[b], 1).item()                   # randomly sample as negative samples
             behavior_embeds_neg.append(behavior_embeds_world[neg_idx])
-        behavior_embeds_neg = torch.stack(behavior_embeds_neg, dim=0)
+            behavior_neighbors_embeds_neg.append(behavior_neighbors_embeds_world[neg_idx])
+        behavior_embeds_neg = torch.stack(behavior_embeds_neg, dim=0)               # [batch_size, 1, 768]
+        behavior_neighbors_embeds_neg = torch.stack(behavior_neighbors_embeds_neg, dim=0)
 
         # select a negative text for each image
         text_ids_neg = []
@@ -184,53 +201,62 @@ class TranslatorQformerArxiv(TranslatorBase):
             text_ids_neg.append(text_input_ids_world[neg_idx])
             text_atts_neg.append(text_attention_mask_world[neg_idx])
 
-        text_ids_neg = torch.stack(text_ids_neg, dim=0)
-        text_atts_neg = torch.stack(text_atts_neg, dim=0)
+        text_ids_neg = torch.stack(text_ids_neg, dim=0)                             # [batch_size, 512]
+        text_atts_neg = torch.stack(text_atts_neg, dim=0)                           # [batch_size, 512]
 
         text_ids_all = torch.cat(
-            [text_tokens.input_ids, text_tokens.input_ids, text_ids_neg], dim=0
+            [text_tokens.input_ids, text_tokens.input_ids, text_ids_neg], dim=0     # [3 * batch_size, 512]
         )  # pos, pos, neg
         text_atts_all = torch.cat(
-            [text_tokens.attention_mask, text_tokens.attention_mask, text_atts_neg],
+            [text_tokens.attention_mask, text_tokens.attention_mask, text_atts_neg],    # [3*batch_size, 512]
             dim=0,
         )
 
-        query_tokens_itm = self.query_tokens.expand(text_ids_all.shape[0], -1, -1)
-        query_atts_itm = torch.ones(query_tokens_itm.size()[:-1], dtype=torch.long).to(
+        query_tokens_itm = self.query_tokens.expand(text_ids_all.shape[0], -1, -1)      # reapeat [3*batch_size, 32, 768]
+        query_atts_itm = torch.ones(query_tokens_itm.size()[:-1], dtype=torch.long).to( # [3*batch_size, 32]
             behavior_embeds.device
         )
-        attention_mask_all = torch.cat([query_atts_itm, text_atts_all], dim=1)
+        attention_mask_all = torch.cat([query_atts_itm, text_atts_all], dim=1)          # [3*batch_size, 512+32]
 
-        behavior_embeds_all = torch.cat(
+        behavior_embeds_all = torch.cat(                                                # [3*batch_size, 1, 768]
             [behavior_embeds, behavior_embeds_neg, behavior_embeds], dim=0
         )  # pos, neg, pos
+        behavior_neighbors_embeds_all = torch.cat(                                      # [3*batch_size, 10 ,768]
+            [behavior_neighbors_embeds, behavior_neighbors_embeds_neg, behavior_neighbors_embeds], dim=0
+        )
+
         behavior_atts_all = torch.ones(behavior_embeds_all.size()[:-1], dtype=torch.long).to(
-            behavior_embeds.device
+            behavior_embeds.device                                                      # [3*batch_size, 1]
         )
+        behavior_neighbors_atts_all = [[1] * x + [0] * (behavior_neighbors.shape[-1] - x) \
+            for x in behavior_neighbors_length] * 3
+        behavior_neighbors_atts_all = torch.tensor(np.array(behavior_neighbors_atts_all), dtype=torch.long).to(behavior_neighbors_embeds.device)
 
-        output_itm = self.Qformer.bert(
-            text_ids_all,
-            query_embeds=query_tokens_itm,
-            attention_mask=attention_mask_all,
-            encoder_hidden_states=behavior_embeds_all,
-            encoder_attention_mask=behavior_atts_all,
+        output_itm = self.Qformer.bert(                     # Q: [query tokens, text]; K,V: gnn feature
+            text_ids_all,                                   # pos,pos,neg  [3*batch_size, 512]
+            query_embeds=query_tokens_itm,                  # repeat in batch  [3*batch_size, 32, 768]  Q
+            attention_mask=attention_mask_all,              # [3*batch_size, 512+32]
+            # encoder_hidden_states=behavior_embeds_all,      # pos,neg,pos [3*batch_size, 1, 768]
+            encoder_hidden_states=behavior_neighbors_embeds_all,
+            # encoder_attention_mask=behavior_atts_all,
+            encoder_attention_mask=behavior_neighbors_atts_all,
             return_dict=True,
-        )
+        )   # last_hidden_state:    [3*batch_size, 32+512, 768]
 
-        vl_embeddings = output_itm.last_hidden_state[:, : query_tokens_itm.size(1), :]
-        vl_output = self.itm_head(vl_embeddings)
-        logits = vl_output.mean(dim=1)
+        vl_embeddings = output_itm.last_hidden_state[:, : query_tokens_itm.size(1), :]  # [3*batch_size, 32, 768]
+        vl_output = self.itm_head(vl_embeddings)        # [3*batch_size, 32, 2]
+        logits = vl_output.mean(dim=1)                  # [3*batch_size, 2], pooling of 32 features
 
         itm_labels = torch.cat(
             [torch.ones(bs, dtype=torch.long), torch.zeros(2 * bs, dtype=torch.long)],
             dim=0,
-        ).to(behavior_embeds.device)
+        ).to(behavior_embeds.device)                    # [3 * batch_size] [[1, 1, .. 0, 0,.. 0, 0]]
         loss_itm = F.cross_entropy(logits, itm_labels)
 
         ##================= Image Captioning ========================##
-        decoder_input_ids = text_tokens.input_ids.clone()
-        decoder_input_ids[:, 0] = self.tokenizer.bos_token_id
-        labels = decoder_input_ids.masked_fill(
+        decoder_input_ids = text_tokens.input_ids.clone()       # [batch_size, 512] summary text
+        decoder_input_ids[:, 0] = self.tokenizer.bos_token_id   # [DEC]
+        labels = decoder_input_ids.masked_fill(                 # [batch_size, 512]
             decoder_input_ids == self.tokenizer.pad_token_id, -100
         )
 
@@ -247,7 +273,7 @@ class TranslatorQformerArxiv(TranslatorBase):
         )
 
         loss_lm = lm_output.loss
-        return TranslatorOutput(
+        return TranslatorOutput(                        # 3 optimized object
             loss=loss_itc + loss_itm + loss_lm,
             loss_itc=loss_itc,
             loss_itm=loss_itm,
@@ -463,7 +489,7 @@ class TranslatorQformerArxiv(TranslatorBase):
         )
 
     @classmethod
-    def from_config(cls, cfg):
+    def from_config(cls, cfg):                          # initialize
         # Behavior
         behavior_length = cfg.get("behavior_length", 384)
 
@@ -474,14 +500,14 @@ class TranslatorQformerArxiv(TranslatorBase):
         num_query_token = cfg.get("num_query_token")
         cross_attention_freq = cfg.get("cross_attention_freq", 2)
 
-        model = cls(
+        model = cls(                                    # define and initialize Qformer
             num_features=behavior_length,
             num_query_token=num_query_token,
             cross_attention_freq=cross_attention_freq,
             max_txt_len=max_txt_len,
         )
 
-        model.load_checkpoint_from_config(cfg)
+        model.load_checkpoint_from_config(cfg)          # load BERT checkpoint
 
         return model
 

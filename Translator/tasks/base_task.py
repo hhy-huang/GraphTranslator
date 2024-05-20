@@ -30,7 +30,7 @@ class BaseTask:
     def build_model(self, cfg):
         model_config = cfg.model_cfg
 
-        model_cls = registry.get_model_class(model_config.arch)
+        model_cls = registry.get_model_class(model_config.arch)     # model translator_qformer_arxiv
         return model_cls.from_config(model_config)
 
     def build_datasets(self, cfg):

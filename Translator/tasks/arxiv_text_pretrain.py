@@ -31,7 +31,7 @@ class ArxivTextPretrainTask(BaseTask):
 
         assert len(cfg.datasets_cfg) > 0, "At least one dataset has to be specified."
 
-        for name in cfg.datasets_cfg:
+        for name in cfg.datasets_cfg:                                       # arxiv_caption, summary_embeddings.csv
             dataset_config = cfg.datasets_cfg[name]
             builder = registry.get_builder_class(name)(dataset_config, cfg)
             dataset = builder.build_datasets()

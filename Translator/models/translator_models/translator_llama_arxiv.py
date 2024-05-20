@@ -133,8 +133,7 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
         # pad sequences
         input_ids = pad_sequence(sequences, batch_first=True, padding_value=tokenizer.pad_token_id).to(device)
         labels = pad_sequence(labels, batch_first=True, padding_value=-100).to(device)
-        inputs_embeds = self.chatglm2_model.transformer.embedding.word_embeddings(input_ids)
-        # inputs_embeds = self.chatglm2_model.model.embed_tokens(input_ids)
+        inputs_embeds = self.chatglm2_model.model.embed_tokens(input_ids)
         inputs_embeds[:, nvtoken_id: nvtoken_id + nvtoken] = vtokens
         inputs_embeds = inputs_embeds.transpose(0, 1).contiguous()
         return input_ids, labels, inputs_embeds
@@ -171,9 +170,9 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
         input_ids, labels, inputs_embeds = self.prepare_lm_input(
             vtokens=vtokens, text_input=instruction, answer=text
         )
-        # inputs_embeds = inputs_embeds.permute(1, 0, 2)
+        inputs_embeds = inputs_embeds.permute(1, 0, 2)
         outputs = self.chatglm2_model(
-            input_ids=input_ids,
+            input_ids=None,
             inputs_embeds=inputs_embeds,
             return_dict=True,
             labels=labels

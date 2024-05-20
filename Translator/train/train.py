@@ -3,6 +3,7 @@ import random
 import sys
 import os
 import numpy as np
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4,5,6,7"
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
 import torch
 import torch.backends.cudnn as cudnn
@@ -28,7 +29,7 @@ torch.backends.cuda.matmul.allow_tf32 = True
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Training")
-    parser.add_argument("--num_workers", default=1, type=int)
+    parser.add_argument("--num_workers", default=3, type=int)
     parser.add_argument("--cfg-path", default="./pretrain_arxiv_stage1.yaml", help="path to configuration file.")
     parser.add_argument(
         "--options",
@@ -54,7 +55,7 @@ def setup_seeds(config):
     cudnn.deterministic = True
 
 
-def get_runner_class(cfg):
+def get_runner_class(cfg):  # runner class
     """
     Get runner class from config. Default to epoch-based runner.
     """
@@ -74,7 +75,7 @@ def main(job_id):
     task = tasks.setup_task(cfg)
 
     datasets = task.build_datasets(cfg)
-    model = task.build_model(cfg)
+    model = task.build_model(cfg)           # define and initialize model(Qformer)
     runner = get_runner_class(cfg)(
         cfg=cfg,
         job_id=job_id,

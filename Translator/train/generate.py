@@ -3,7 +3,7 @@ import argparse
 import random
 import sys
 import os
-
+sys.path.append('/data/ChenWei/HaoyuHuang/GraphTranslator/Translator')
 import torch
 import torch.backends.cudnn as cudnn
 
@@ -20,7 +20,7 @@ from common.optims import (
 from common.registry import registry
 from common.utils import now
 
-from datasets.builders import *
+from Translator.datasets.builders import *
 from models import *
 from runners import *
 from tasks import *
