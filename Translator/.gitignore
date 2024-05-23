@@ -4,4 +4,4 @@ checkpoint/
 **/.DS_store
 *.pyc
 *.tar.gz
-./data
+*.png
