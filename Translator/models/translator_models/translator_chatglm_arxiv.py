@@ -9,6 +9,7 @@ from typing import List, Optional
 import torch
 import torch.nn as nn
 import torch.distributed as dist
+import numpy as np
 
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.nn.parallel import DataParallel
@@ -48,6 +49,8 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
         self.llm_dir = config['llm_dir']
         self.bert_dir = config['bert_dir']
 
+        self.use_neighbors = True
+        self.GNN_embeddings = torch.load("/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/GraphTranslator-arxiv/graphsage_node_embeddings.pt").to('cpu').detach().numpy()
         self.tokenizer = self.init_tokenizer()
 
         self.Qformer, self.query_tokens = self.init_Qformer(
@@ -141,6 +144,14 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
 
     def forward(self, samples):
         multimodal_embeds = samples[1].unsqueeze(dim=1).to(self.device)
+
+        behavior_neighbors = samples[4]                         # [batch_size, 10]
+        behavior_neighbors_length = samples[5].detach().tolist()            # [batch_size]
+        behavior_neighbors_embeds = torch.tensor(self.GNN_embeddings[behavior_neighbors]).to(self.device) # [batch_size, 10, 768]
+        behavior_neighbors_atts = [[1] * x + [0] * (behavior_neighbors.shape[-1] - x) \
+            for x in behavior_neighbors_length]
+        behavior_neighbors_atts = torch.tensor(np.array(behavior_neighbors_atts), dtype=torch.long).to(behavior_neighbors_embeds.device)
+
         text = samples[2]
         pre_instruction = ['The description of the paper and its cited papers is as follows:' for _ in range(len(text))]
         instruction = ['\nQuestion: Please summarize the topic and content of the paper and its citations in English. Answer:' for _ in range(len(text))]
@@ -160,12 +171,24 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
         query_atts = torch.ones(query_tokens.size()[:-1], dtype=torch.long).to(device)
         Qformer_atts = torch.cat([query_atts, text_Qformer.attention_mask], dim=1)
 
-        query_output = self.Qformer.bert(
-            query_embeds=query_tokens,
-            encoder_hidden_states=multimodal_embeds,
-            encoder_attention_mask=multimodal_atts,
-            return_dict=True,
-        )
+        if self.use_neighbors:
+            query_output = self.Qformer.bert(
+                query_embeds=query_tokens,
+                # encoder_hidden_states=multimodal_embeds,
+                encoder_hidden_states=behavior_neighbors_embeds,
+                # encoder_attention_mask=multimodal_atts,
+                encoder_attention_mask=behavior_neighbors_atts,
+                return_dict=True,
+            )
+        else:
+            query_output = self.Qformer.bert(
+                query_embeds=query_tokens,
+                encoder_hidden_states=multimodal_embeds,
+                # encoder_hidden_states=behavior_neighbors_embeds,
+                encoder_attention_mask=multimodal_atts,
+                # encoder_attention_mask=behavior_neighbors_atts,
+                return_dict=True,
+            )
         vtokens = self.chatglm2_proj(query_output.last_hidden_state[:, :query_tokens.size(1), :])
 
         input_ids, labels, inputs_embeds = self.prepare_lm_input(
@@ -213,7 +236,12 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
             captions (list): A list of strings of length batch_size * num_captions.
         """
         device = self.Qformer.bert.device
+
         multimodal_embeds = samples[1].unsqueeze(dim=1).to(device)
+        behavior_neighbors = samples[4]                                     # [batch_size, 10]
+        behavior_neighbors_length = samples[5].detach().tolist()            # [batch_size]
+        behavior_neighbors_embeds = torch.tensor(self.GNN_embeddings[behavior_neighbors]).to(self.device) # [batch_size, 10, 768]
+
         bs = len(samples[0])
         title = samples[3]
         instruction = [prompts[0]] * bs
@@ -227,6 +255,10 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
 
         with self.maybe_autocast():
             multimodal_atts = torch.ones(multimodal_embeds.size()[:-1], dtype=torch.long).to(device)
+            behavior_neighbors_atts = [[1] * x + [0] * (behavior_neighbors.shape[-1] - x) \
+                for x in behavior_neighbors_length]
+            behavior_neighbors_atts = torch.tensor(np.array(behavior_neighbors_atts), dtype=torch.long).to(behavior_neighbors_embeds.device)
+
             query_tokens = self.query_tokens.expand(multimodal_embeds.shape[0], -1, -1)
             text_Qformer = self.tokenizer(
                 instruction,
@@ -236,12 +268,24 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
                 return_tensors="pt",
             ).to(device)
 
-            query_output = self.Qformer.bert(
-                query_embeds=query_tokens,
-                encoder_hidden_states=multimodal_embeds,
-                encoder_attention_mask=multimodal_atts,
-                return_dict=True,
-            )
+            if self.use_neighbors:
+                query_output = self.Qformer.bert(
+                    query_embeds=query_tokens,
+                    # encoder_hidden_states=multimodal_embeds,
+                    encoder_hidden_states=behavior_neighbors_embeds,
+                    # encoder_attention_mask=multimodal_atts,
+                    encoder_attention_mask=behavior_neighbors_atts,
+                    return_dict=True,
+                )
+            else:
+                query_output = self.Qformer.bert(
+                    query_embeds=query_tokens,
+                    encoder_hidden_states=multimodal_embeds,
+                    # encoder_hidden_states=behavior_neighbors_embeds,
+                    encoder_attention_mask=multimodal_atts,
+                    # encoder_attention_mask=behavior_neighbors_atts,
+                    return_dict=True,
+                )
 
             vtokens = self.chatglm2_proj(query_output.last_hidden_state[:, :query_tokens.size(1), :])
 

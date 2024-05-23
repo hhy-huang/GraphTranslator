@@ -40,6 +40,7 @@ class TranslatorQformerArxiv(TranslatorBase):
     ):
         super().__init__()
 
+        self.use_neighbors = True
         self.GNN_embeddings = torch.load("/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/GraphTranslator-arxiv/graphsage_node_embeddings.pt").to('cpu').detach().numpy()
         self.tokenizer = self.init_tokenizer()                      # tokenizer from BERT, add [DEC] special token
 
@@ -106,15 +107,26 @@ class TranslatorQformerArxiv(TranslatorBase):
 
         query_tokens = self.query_tokens.expand(behavior_embeds.shape[0], -1, -1)   # repeated in each batch
                                                                 # [batch_size, 32, 768]
-        query_output = self.Qformer.bert(
-            query_embeds=query_tokens,                          # [batch_size, 32, 768]
-            # encoder_hidden_states=behavior_embeds,              # [batch_size, 1, 768], 执行cross-attention而不是self-attention
-            encoder_hidden_states=behavior_neighbors_embeds,    # [batch_size, 10, 768], 执行cross-attention而不是self-attention
-            # encoder_attention_mask=behavior_atts,               # [batch_size, 1]
-            encoder_attention_mask=behavior_neighbors_atts,     # [batch_size, 10]
-            use_cache=True,
-            return_dict=True,
-        )       # last_hidden_state: [batch_size, 32, 768]
+        if self.use_neighbors:
+            query_output = self.Qformer.bert(
+                query_embeds=query_tokens,                          # [batch_size, 32, 768]
+                # encoder_hidden_states=behavior_embeds,              # [batch_size, 1, 768], 执行cross-attention而不是self-attention
+                encoder_hidden_states=behavior_neighbors_embeds,    # [batch_size, 10, 768], 执行cross-attention而不是self-attention
+                # encoder_attention_mask=behavior_atts,               # [batch_size, 1]
+                encoder_attention_mask=behavior_neighbors_atts,     # [batch_size, 10]
+                use_cache=True,
+                return_dict=True,
+            )       # last_hidden_state: [batch_size, 32, 768]
+        else:
+            query_output = self.Qformer.bert(
+                query_embeds=query_tokens,                          # [batch_size, 32, 768]
+                encoder_hidden_states=behavior_embeds,              # [batch_size, 1, 768], 执行cross-attention而不是self-attention
+                # encoder_hidden_states=behavior_neighbors_embeds,    # [batch_size, 10, 768], 执行cross-attention而不是self-attention
+                encoder_attention_mask=behavior_atts,               # [batch_size, 1]
+                # encoder_attention_mask=behavior_neighbors_atts,     # [batch_size, 10]
+                use_cache=True,
+                return_dict=True,
+            )       # last_hidden_state: [batch_size, 32, 768]
         # layer norm?
         behavior_feats = F.normalize(                           # [batch_size, 32, 256]
             self.behavior_proj(query_output.last_hidden_state), dim=-1
@@ -232,16 +244,28 @@ class TranslatorQformerArxiv(TranslatorBase):
             for x in behavior_neighbors_length] * 3
         behavior_neighbors_atts_all = torch.tensor(np.array(behavior_neighbors_atts_all), dtype=torch.long).to(behavior_neighbors_embeds.device)
 
-        output_itm = self.Qformer.bert(                     # Q: [query tokens, text]; K,V: gnn feature
-            text_ids_all,                                   # pos,pos,neg  [3*batch_size, 512]
-            query_embeds=query_tokens_itm,                  # repeat in batch  [3*batch_size, 32, 768]  Q
-            attention_mask=attention_mask_all,              # [3*batch_size, 512+32]
-            # encoder_hidden_states=behavior_embeds_all,      # pos,neg,pos [3*batch_size, 1, 768]
-            encoder_hidden_states=behavior_neighbors_embeds_all,
-            # encoder_attention_mask=behavior_atts_all,
-            encoder_attention_mask=behavior_neighbors_atts_all,
-            return_dict=True,
-        )   # last_hidden_state:    [3*batch_size, 32+512, 768]
+        if self.use_neighbors:
+            output_itm = self.Qformer.bert(                     # Q: [query tokens, text]; K,V: gnn feature
+                text_ids_all,                                   # pos,pos,neg  [3*batch_size, 512]
+                query_embeds=query_tokens_itm,                  # repeat in batch  [3*batch_size, 32, 768]  Q
+                attention_mask=attention_mask_all,              # [3*batch_size, 512+32]
+                # encoder_hidden_states=behavior_embeds_all,      # pos,neg,pos [3*batch_size, 1, 768]
+                encoder_hidden_states=behavior_neighbors_embeds_all,
+                # encoder_attention_mask=behavior_atts_all,
+                encoder_attention_mask=behavior_neighbors_atts_all,
+                return_dict=True,
+            )   # last_hidden_state:    [3*batch_size, 32+512, 768]
+        else:
+            output_itm = self.Qformer.bert(                     # Q: [query tokens, text]; K,V: gnn feature
+                text_ids_all,                                   # pos,pos,neg  [3*batch_size, 512]
+                query_embeds=query_tokens_itm,                  # repeat in batch  [3*batch_size, 32, 768]  Q
+                attention_mask=attention_mask_all,              # [3*batch_size, 512+32]
+                encoder_hidden_states=behavior_embeds_all,      # pos,neg,pos [3*batch_size, 1, 768]
+                # encoder_hidden_states=behavior_neighbors_embeds_all,
+                encoder_attention_mask=behavior_atts_all,
+                # encoder_attention_mask=behavior_neighbors_atts_all,
+                return_dict=True,
+            )   # last_hidden_state:    [3*batch_size, 32+512, 768]
 
         vl_embeddings = output_itm.last_hidden_state[:, : query_tokens_itm.size(1), :]  # [3*batch_size, 32, 768]
         vl_output = self.itm_head(vl_embeddings)        # [3*batch_size, 32, 2]
@@ -306,7 +330,7 @@ class TranslatorQformerArxiv(TranslatorBase):
             captions (list): A list of strings of length batch_size * num_captions.
         """
 
-        behavior_embeds = torch.unsqueeze(samples[1], dim=1).to('cuda:1')
+        behavior_embeds = torch.unsqueeze(samples[1], dim=1).to(self.device)
 
         if not use_nucleus_sampling:
             behavior_embeds = behavior_embeds.repeat_interleave(num_beams, dim=0)

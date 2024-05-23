@@ -4,9 +4,10 @@ import ast
 from tqdm import tqdm
 
 
-file_path = "/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/summary_embeddings.csv"
+# file_path = "/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/summary_embeddings.csv"
+file_path = "/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/arxiv_sample_test.csv"
 sample_neighbor_path = "/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/sample_neighbor_df.csv"
-output_path = "/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/summary_neightbors_embeddings.csv"
+output_path = "/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/arxiv_sample_test.csv"
 
 
 def build_dict_from_csv(csv_file):

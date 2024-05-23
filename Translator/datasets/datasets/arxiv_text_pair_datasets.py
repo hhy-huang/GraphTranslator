@@ -26,14 +26,24 @@ class ArxivTextPairDataset(BatchIterableDataset):
         neighbour_input = data[0][3]
         title = data[0][4]
 
-        neighbour_list = [user_id] + ast.literal_eval(data[0][5])
-        length = len(neighbour_list)
-        # padding
-        if len(neighbour_list) <= self.max_neighbour:
-            neighbour_list += (self.max_neighbour - len(neighbour_list)) * [-1]
-        else:
-            neighbour_list = neighbour_list[:self.max_neighbour]
-        neighbour_list = np.array(neighbour_list)
+        if len(data[0]) == 7:
+            neighbour_list = [user_id] + ast.literal_eval(data[0][6])
+            length = len(neighbour_list)
+            # padding
+            if len(neighbour_list) <= self.max_neighbour:
+                neighbour_list += (self.max_neighbour - len(neighbour_list)) * [-1]
+            else:
+                neighbour_list = neighbour_list[:self.max_neighbour]
+            neighbour_list = np.array(neighbour_list)
+        elif len(data[0]) == 6:
+            neighbour_list = [user_id] + ast.literal_eval(data[0][5])
+            length = len(neighbour_list)
+            # padding
+            if len(neighbour_list) <= self.max_neighbour:
+                neighbour_list += (self.max_neighbour - len(neighbour_list)) * [-1]
+            else:
+                neighbour_list = neighbour_list[:self.max_neighbour]
+            neighbour_list = np.array(neighbour_list)
     
         text_input = 'The summary of this article is as follows:' + node_input+ '\nThere are some papers that cite this paper.' + neighbour_input
 
