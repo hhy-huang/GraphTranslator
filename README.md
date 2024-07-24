@@ -1,19 +1,30 @@
-# GraphTranslator: Aligning Graph Model to Large Language Model for Open-ended Tasks
+# GraphTranslator-Implementation & Rethinking
 
-Code of our The Web Conference 2024 paper
+The work is based on The Web Conference 2024 paper
 [GraphTranslator: Aligning Graph Model to Large Language Model for Open-ended Tasks](https://arxiv.org/pdf/2402.07197.pdf)
 
 Author: Mengmei Zhang, [Mingwei Sun](https://github.com/smw1996), [Peng Wang](https://github.com/PaulWongDlut), [Shen Fan](https://www.findshine.com), [Yanhu Mo](https://github.com/guyuisland), Xiaoxiao Xu, Hong Liu, Cheng Yang, Chuan Shi
 
-## Model Pipeline
+My work concentrated on the ***implementation*** of the GraphTranslator and the ***improvement*** based on it.
+
+### Result:
+
+| Methods | Arxiv_Sample_200 |  |  | |
+------|-----|-----|-----|-----
+|  | Acc@1 | Acc@3 | Acc@5 | Legality Rate
+| GraphTranslator | 8.67 | 14.29 | 22.96 | 98.94
+| GraphTranslator_neighbors | **12.12** | **21.21** | **29.29** | **99.5**
+
+
+## Original Model Pipeline
 
 ![image-20240129111934589](./figure/model.jpg)
 
-- **Pre-training Graph Model Phase.** In the pre-training phase, we employ link prediction as the self-supervised task for pre-training the graph model.
+- **Pre-training Graph Model Phase.**
 
-- **Producer Phase.** In the Producer phase, we employ LLM to summary Node/Neighbor Information.
+- **Producer Phase.**
 
-- **Translator Training Phase.**
+- **Translator Training Phase.(Modified)** 
 
   ​	*Stage 1*: Training the Translator for GraphModel-Text alignment.
 
@@ -23,19 +34,22 @@ Author: Mengmei Zhang, [Mingwei Sun](https://github.com/smw1996), [Peng Wang](ht
 
 ### Installation
 
-We run our experiment with the following settings.
+The experiment settings:
 
-- CPU: Intel(R) Xeon(R) Platinum 8163 CPU @ 2.50GHz
-- GPU: Tesla V100-SXM2-32GB
-- OS: Linux (Ubuntu 18.04.6 LTS)
-- Python==3.9, CUDA==11.4, Pytorch==1.12.1
+- NVIDIA A40
+- CUDA Version: 11.4
+- torch: 1.12.1+cu113
+- torch-cluster             1.6.0+pt112cu113
+- torch_geometric           2.5.3
+- torch-scatter             2.1.0+pt112cu113
+- torch-sparse              0.6.16+pt112cu113
+- torch-spline-conv         1.2.1+pt112cu113
 
 The `./requirements.txt` list all Python libraries that GraphTranslator depend on, and you can install using:
 
 ```
 conda create -n graphtranslator python=3.9
 conda activate graphtranslator
-git clone https://github.com/alibaba/GraphTranslator.git
 cd GraphTranslator/
 pip install -r requirements.txt
 ```
@@ -88,6 +102,8 @@ python producer.py
 
 #### Training Phase
 
+To achieve the modified performance, you need to set the parameters `self.use_neighbors = True` in the files under the folder `./Translator/models/translator_models`.
+
 Train the Translator model with the prepared ArXiv dataset.
 
 - Stage 1 Training
@@ -105,7 +121,7 @@ After stage 1, you will get a model checkpoint stored in `./Translator/model_out
 
 Train the Translator for GraphModel-LLM alignment. The training configurations are in the file `./Translator/train/pretrain_arxiv_stage2.yaml`.
 
-chatglm-6b: 24000MiB
+GPU cost: chatglm-6b, 24000MiB
 
 ```
 cd ./Translator/train
@@ -116,45 +132,26 @@ After stage 2, you will get a model checkpoint stored in `./Translator/model_out
 
 After all the training stages , you will get a model checkpoint that can translate GraphModel information into that the LLM can understand.
 
-- **Note**: Training phase is not necessary if you only want to obtain inference results with our pre-trained model checkpoint. You can download our pre-trained checkpoint `checkpoint_0.pth` from [link](https://huggingface.co/Hualouz/Qformer/tree/main) and place it in the `./Translator/model_output/pretrain_arxiv_stage2` directory. Then skip the whole Training Phase and go to the Generate Phase.
-
 #### Generate Phase
 
-- generate prediction with the pre-trained Translator model. The generate configurations are in the file `./Translator/train/pretrain_arxiv_generate_stage2.yaml`. As to the inference efficiency, it may take a while to generate all the predictions and save them into file.
+- generate prediction with the pre-trained Translator model. The generate configurations are in the file `./Translator/train/pretrain_arxiv_generate_stage2.yaml`. As to the inference efficiency, I randomly selected 200 data points for the evaluation.
 
-chatglm-6B: 14375MiB
+- GPU Cost: chatglm-6B, 14375MiB
 
 ```
 cd ./Translator/train
 python generate.py
 ```
 
-The generated prediction results will be saved in `./data/arxiv/pred.txt`.
+- The generated prediction results will be saved in `./data/arxiv/pred_noNeighbors.txt` and `./data/arxiv/pred_with_neighbors.txt` 
 
 #### Evaluation
 
 Evaluate the accuracy of the generated predictions.
 
+Don't forget to change the prediction file name.
+
 ```
 cd ./Evaluate
 python eval.py
 ```
-
-## Citation
-
-```
-@article{zhang2024graphtranslator,
-  title={GraphTranslator: Aligning Graph Model to Large Language Model for Open-ended Tasks},
-  author={Zhang, Mengmei and Sun, Mingwei and Wang, Peng and Fan, Shen and Mo, Yanhu and Xu, Xiaoxiao and Liu, Hong and Yang, Cheng and Shi, Chuan},
-  journal={arXiv preprint arXiv:2402.07197},
-  year={2024}
-}
-```
-
-## Acknowledgements
-
-Thanks to all the previous works that we used and that inspired us.
-
-- [LAVIS](https://github.com/salesforce/LAVIS): The logical architecture of LAVIS library served as the foundation for our code development.
-- [ChatGLM](https://github.com/THUDM/ChatGLM-6B): An open-source LLM with the amazing language capabilities.
-- [BLIP2](https://arxiv.org/abs/2301.12597): our model is inspired from BLIP2.
