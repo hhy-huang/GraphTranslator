@@ -36,7 +36,9 @@ class ArxivTextPairDataset(BatchIterableDataset):
                 neighbour_list = neighbour_list[:self.max_neighbour]
             neighbour_list = np.array(neighbour_list)
         elif len(data[0]) == 6:
-            neighbour_list = [user_id] + ast.literal_eval(data[0][5])
+            # print(data[0][5])
+            # neighbour_list = [user_id] + ast.literal_eval(data[0][5])
+            neighbour_list = [user_id] + [data[0][5]]
             length = len(neighbour_list)
             # padding
             if len(neighbour_list) <= self.max_neighbour:

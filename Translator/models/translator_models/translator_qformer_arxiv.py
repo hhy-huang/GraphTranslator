@@ -40,7 +40,7 @@ class TranslatorQformerArxiv(TranslatorBase):
     ):
         super().__init__()
 
-        self.use_neighbors = True
+        self.use_neighbors = False
         self.GNN_embeddings = torch.load("/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/GraphTranslator-arxiv/graphsage_node_embeddings.pt").to('cpu').detach().numpy()
         self.tokenizer = self.init_tokenizer()                      # tokenizer from BERT, add [DEC] special token
 
@@ -158,10 +158,10 @@ class TranslatorQformerArxiv(TranslatorBase):
         sim_q2t = torch.matmul(                       # [batch_size, 1, 32, 256] * [batch_size, 256, 1]
             behavior_feats.unsqueeze(1), text_feat_all.unsqueeze(-1)
         ).squeeze()                                   # [batch_size, batch_size, 32]
-        # [batch_size, batch_size*num_gpu, num_query_tokens]
+        # [batch_size, batch_size*num_gpu, num_query_tokens] 每组node之间有32个相似度
 
         # image-text similarity: aggregate across all query tokens
-        sim_i2t, _ = sim_q2t.max(-1)                # select from text dim
+        sim_i2t, _ = sim_q2t.max(-1)                # select from text dim 32个相似度中取最大的
         sim_i2t = sim_i2t / self.temp               # [batch_size, batch_size]
 
         # text-query similarity: [batch_size, batch_size*num_gpu, num_query_tokens]

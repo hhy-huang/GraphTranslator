@@ -67,18 +67,19 @@ class ArxivGenerateTask(BaseTask):
 
         # pred_txt = open(self.cfg.datasets_cfg['arxiv_caption']['pred_dir'], 'w')
         pred_res = []
-        for network_input in metric_logger.log_every(data_loader, log_freq, iters_per_epoch, header):
-            with torch.cuda.amp.autocast(enabled=use_amp):
-                ChatGLM_response = model.generate(network_input, self.cfg.prompt_cfg['generate_prompt'])
-
-            for i in tqdm(range(len(ChatGLM_response))):
-                id = str(network_input[0][i].detach().cpu().numpy())
-                ori_desc = network_input[2][i].replace('\n', '\\n').replace('\t', '\\t')
-                pred = ChatGLM_response[i].replace('\n', '\\n').replace('\t', '\\t')
-                pred_res.append(id+'\t'+ori_desc+'\t'+pred+'\n')
-                # pred_txt.write(id+'\t'+ori_desc+'\t'+pred+'\n')
-        
         with open(self.cfg.datasets_cfg['arxiv_caption']['pred_dir'], 'w') as f:
-            for item in pred_res:
-                f.write(item)
+            for network_input in metric_logger.log_every(data_loader, log_freq, iters_per_epoch, header):
+                with torch.cuda.amp.autocast(enabled=use_amp):
+                    ChatGLM_response = model.generate(network_input, self.cfg.prompt_cfg['generate_prompt'])
+
+                for i in tqdm(range(len(ChatGLM_response))):
+                    id = str(network_input[0][i].detach().cpu().numpy())
+                    ori_desc = network_input[2][i].replace('\n', '\\n').replace('\t', '\\t')
+                    pred = ChatGLM_response[i].replace('\n', '\\n').replace('\t', '\\t')
+                    pred_res.append(id+'\t'+ori_desc+'\t'+pred+'\n')
+                    # pred_txt.write(id+'\t'+ori_desc+'\t'+pred+'\n')
+                    f.write(id+'\t'+ori_desc+'\t'+pred+'\n')
+        
+            # for item in pred_res:
+            #     f.write(item)
         # pred_txt.close()

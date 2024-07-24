@@ -49,8 +49,8 @@ class TranslatorCHATGLMArxiv(TranslatorBase):
         self.llm_dir = config['llm_dir']
         self.bert_dir = config['bert_dir']
 
-        self.use_neighbors = True
-        self.GNN_embeddings = torch.load("/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/GraphTranslator-arxiv/graphsage_node_embeddings.pt").to('cpu').detach().numpy()
+        self.use_neighbors = False
+        self.GNN_embeddings = torch.load("/data/ChenWei/HaoyuHuang/GraphTranslator/data/arxiv/GraphTranslator-arxiv/bert_node_embeddings.pt").to('cpu').detach().numpy()
         self.tokenizer = self.init_tokenizer()
 
         self.Qformer, self.query_tokens = self.init_Qformer(

@@ -75,5 +75,6 @@ def evaluation(label_file, pred_file):
 
 if __name__ == '__main__':
     label_file = "../data/arxiv/arxiv_test.csv"
-    pred_file = "../data/arxiv/pred_neighbors.txt"
+    # pred_file = "../data/arxiv/pred_noNeighbors.txt"
+    pred_file = "../data/arxiv/pred_with_neighbors.txt"
     evaluation(label_file, pred_file)

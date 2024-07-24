@@ -3,8 +3,10 @@ model:
   model_type: pretrain_arxiv
   load_finetuned: False
   # intialize stage 2 pretraining from stage 1 pretrained model
-  pretrained: "../model_output/pretrain_arxiv_stage1/checkpoint_0.pth"
+  # pretrained: "../model_output/pretrain_arxiv_stage1/checkpoint_19.pth"
+  pretrained: "../model_output/pretrain_arxiv_stage1_noNeighbor/checkpoint_19.pth"
   llm_dir: "../models/chatglm2-6b"
+  # llm_dir: "/data/ChenWei/HaoyuHuang/llama-2-7b-hf"
   bert_dir: "../models/bert-base-uncased"
 
   # behavior encoder
@@ -21,7 +23,7 @@ model:
 datasets:
   arxiv_caption: # name of the dataset builder
     type: translator_train_stage2
-    datasets_dir: "../../data/arxiv/summary_embeddings.csv"
+    datasets_dir: "../../data/arxiv/summary_neighbors_embeddings.csv"
     arxiv_processor:
       train:
         name: "translator_arxiv_train"
@@ -40,8 +42,10 @@ run:
   warmup_lr: 1e-6
 
   weight_decay: 0.05
-  max_epoch: 1
-  batch_size_train: 1
+  # max_epoch: 1
+  max_epoch:  20
+  # batch_size_train: 1
+  batch_size_train: 3   # 4 single GPU oom
   batch_size_eval: 64
   warmup_steps: 5000
   accum_grad_iters: 32
@@ -49,7 +53,8 @@ run:
 
 
   seed: 42
-  output_dir: "../model_output/pretrain_arxiv_stage2"
+  # output_dir: "../model_output/pretrain_arxiv_stage2"
+  output_dir: "../model_output/pretrain_arxiv_stage2_noNeighbor"
 
   amp: True
   resume_ckpt_path: null
@@ -57,6 +62,6 @@ run:
   evaluate: False
   train_splits: ["train"]
 
-  device: "cuda:0"
+  device: "cuda:7"
   dist_url: "env://"
   distributed: True

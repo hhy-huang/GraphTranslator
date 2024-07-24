@@ -105,6 +105,8 @@ After stage 1, you will get a model checkpoint stored in `./Translator/model_out
 
 Train the Translator for GraphModel-LLM alignment. The training configurations are in the file `./Translator/train/pretrain_arxiv_stage2.yaml`.
 
+chatglm-6b: 24000MiB
+
 ```
 cd ./Translator/train
 python train.py --cfg-path ./pretrain_arxiv_stage2.yaml
@@ -119,6 +121,8 @@ After all the training stages , you will get a model checkpoint that can transla
 #### Generate Phase
 
 - generate prediction with the pre-trained Translator model. The generate configurations are in the file `./Translator/train/pretrain_arxiv_generate_stage2.yaml`. As to the inference efficiency, it may take a while to generate all the predictions and save them into file.
+
+chatglm-6B: 14375MiB
 
 ```
 cd ./Translator/train
